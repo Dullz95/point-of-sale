@@ -5,20 +5,40 @@ from flask import Flask, request
 from flask_jwt import JWT, jwt_required, current_identity
 from flask_cors import CORS
 
-# create class for object
+# create class for user log in details
 class User(object):
     def __init__(self, id, username, password):
         self.id = id
         self.username = username
         self.password = password
 
-class Product(object):
-    def __init__(self, product_id, product_name, product_type, price, quantity):
-        self.product_id = product_id
-        self.product_name = product_name
-        self.product_type = product_type
-        self.price = price
-        self.quantity = quantity
+# create class(object) for prroducts
+# class Product(object):
+#     def __init__(self, product_id, product_name, product_type, price, quantity):
+#         self.product_id = product_id
+#         self.product_name = product_name
+#         self.product_type = product_type
+#         self.price = price
+#         self.quantity = quantity
+
+# create class (object) for Database functions
+class Database(object):
+    def __init__(self):
+        self.conn = sqlite3.connect('sales.db')
+        self.cursor = self.conn.cursor()
+
+    def commiting(self, query, values):
+        self.cursor.execute(query,values)
+        self.conn.commit()
+
+    # select
+    def single_commiting(self, query):
+        self.cursor.execute(query)
+
+    def fetching(self):
+        return self.cursor.fetchall()
+
+
 
 # fetch username and password from the users table
 def fetch_users():
@@ -33,17 +53,17 @@ def fetch_users():
             new_data.append(User(data[0], data[3], data[4]))
     return new_data
 
-def fetch_products():
-    with sqlite3.connect('sales.db') as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM product")
-        products = cursor.fetchall()
-
-        new_data = []
-
-        for data in products:
-            new_data.append(Product(data[0], data[1], data[2], data[3], data[4]))
-    return new_data
+# def fetch_products():
+#     with sqlite3.connect('sales.db') as conn:
+#         cursor = conn.cursor()
+#         cursor.execute("SELECT * FROM product")
+#         products = cursor.fetchall()
+#
+#         new_data = []
+#
+#         for data in products:
+#             new_data.append(Product(data[0], data[1], data[2], data[3], data[4]))
+#     return new_data
 
 
 
@@ -122,6 +142,7 @@ def protected():
 @app.route('/user-registration/', methods=["POST"])
 def user_registration():
     response = {}
+    db = Database()
 
     if request.method == "POST":
 
@@ -130,22 +151,20 @@ def user_registration():
         username = request.form['username']
         password = request.form['password']
 
-        with sqlite3.connect("sales.db") as conn:
-            cursor = conn.cursor()
-            cursor.execute("INSERT INTO user("
-                           "first_name,"
-                           "last_name,"
-                           "username,"
-                           "password) VALUES(?, ?, ?, ?)", (first_name, last_name, username, password))
-            conn.commit()
-            response["message"] = "success"
-            response["status_code"] = 201
+        query = "INSERT INTO user(first_name,last_name,username,password) VALUES(?, ?, ?, ?)"
+        values = first_name, last_name, username, password
+
+        db.commiting(query, values)
+
+        response["message"] = "success"
+        response["status_code"] = 201
         return response
 
 # creating add product end-point
 @app.route('/add-product/', methods=["POST"])
 def add_product():
     response = {}
+    db = Database()
 
     if request.method == "POST":
         item = request.form['item']
@@ -153,55 +172,50 @@ def add_product():
         itemPrice = request.form['itemPrice']
         total = int(quantity) * int(itemPrice)
 
-        with sqlite3.connect('sales.db') as conn:
-            cursor = conn.cursor()
+        query = "INSERT INTO cart(item, quantity, itemPrice, total) VALUES(?, ?, ?, ?)"
+        values = item, quantity, itemPrice, total
 
-            cursor.execute("INSERT INTO cart("
-                           "item,"
-                           "quantity,"
-                           "itemPrice,"
-                           "total) VALUES(?, ?, ?, ?)", (item, quantity, itemPrice, total))
-            conn.commit()
-            response["status_code"] = 201
-            response['description'] = "item added succesfully"
+        db.commiting(query, values)
+
+        response["status_code"] = 201
+        response['description'] = "item added succesfully"
         return response
 
 # create view items in users cart end-point
 @app.route('/view-items/', methods=["GET"])
 def view_items():
     response = {}
-    with sqlite3.connect("sales.db") as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM cart")
+    db =Database()
+    query = "SELECT * FROM cart"
 
-        posts = cursor.fetchall()
+    db.single_commiting(query)
 
     response['status_code'] = 200
-    response['data'] = posts
+    response['data'] = db.fetching()
     return response
 
 # create end-point to delete products from users cart
 @app.route("/delete-product/<int:id>")
 def delete(id):
     response = {}
-    with sqlite3.connect("sales.db") as conn:
-        cursor = conn.cursor()
-        cursor.execute("DELETE FROM cart WHERE id=" + str(id))
-        conn.commit()
-        response['status_code'] = 200
-        response['message'] = "item deleted successfully."
+    db = Database()
+
+    query = "DELETE FROM cart WHERE id=" + str(id)
+    db.single_commiting(query)
+    response['status_code'] = 200
+    response['message'] = "item deleted successfully."
     return response
 
 # create end-point to allow the user to view their profile
 @app.route("/view-profile/<int:user_id>", methods=["GET"])
 def view_profile(user_id):
     response = {}
-    with sqlite3.connect("sales.db") as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM user WHERE user_id= " + str(user_id))
-        profile=cursor.fetchall()
-        response['status_code'] = 200
-        response['data']= profile
+    db= Database()
+
+    query = "SELECT * FROM user WHERE user_id= " + str(user_id)
+    db.single_commiting(query)
+    response['status_code'] = 200
+    response['data']= db.fetching()
 
     return response
 
@@ -209,12 +223,13 @@ def view_profile(user_id):
 @app.route("/view-all-products/", methods=["GET"])
 def view_all():
     response = {}
-    with sqlite3.connect("sales.db") as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM  product")
-        all_products= cursor.fetchall()
-        response['status_code'] = 200
-        response['data'] = all_products
+    db = Database()
+
+    query = "SELECT * FROM  product"
+    db.single_commiting(query)
+
+    response['status_code'] = 200
+    response['data'] = db.fetching()
 
     return response
 
@@ -222,6 +237,7 @@ def view_all():
 @app.route("/add-to-product-table/", methods=["POST"])
 def add():
     response = {}
+    db = Database()
 
     if request.method == "POST":
         product_name = request.form['product_name']
@@ -229,35 +245,34 @@ def add():
         product_type = request.form['product_type']
         price = request.form['price']
 
-        with sqlite3.connect('sales.db') as conn:
-            cursor = conn.cursor()
+        query = "INSERT INTO product(""product_name,product_type,price,quantity) VALUES(?, ?, ?, ?)"
+        values = product_name, product_type, price, quantity
+        db.commiting(query,values)
+        response["status_code"] = 201
+        response['description'] = "item added succesfully"
 
-            cursor.execute("INSERT INTO product("
-                           "product_name,"
-                           "product_type,"
-                           "price,"
-                           "quantity) VALUES(?, ?, ?, ?)", (product_name, product_type, price, quantity))
-            conn.commit()
-            response["status_code"] = 201
-            response['description'] = "item added succesfully"
         return response
 
 # create end-point to edit existing products/
 @app.route("/updating-products/<int:product_id>",methods=["PUT"])
 def edit(product_id):
     response = {}
+    db = Database()
+
     if request.method == "PUT":
         product_name = request.form['product_name']
         product_type = request.form['product_type']
         price = request.form['price']
         quantity = request.form['quantity']
-        with sqlite3.connect("sales.db") as conn:
-            cursor = conn.cursor()
-            cursor.execute( "UPDATE product SET product_name=?, product_type=?, price=?, quantity=?" \
-                    " WHERE product_id='" + str(product_id) + "'", (product_name, product_type, price, quantity))
 
-            response['message'] = 200
-            response['message'] = "Product successfully updated "
+        query = "UPDATE product SET product_name=?, product_type=?, price=?, quantity=?" \
+                    " WHERE product_id='" + str(product_id) + "'"
+        values = product_name, product_type, price, quantity
+
+        db.commiting(query,values)
+
+        response['message'] = 200
+        response['message'] = "Product successfully updated "
         return response
 
 if __name__ == '__main__':
